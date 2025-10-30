@@ -2,37 +2,49 @@ pipeline {
     agent any
 
     triggers {
-
-        cron('0 */2 * * *')
+        cron('0 23,12 * * *') 
     }
 
     stages {
-        stage('Sincronizar e verificar mudanças') {
+        stage('Checkout') {
             steps {
-                script {
-                    echo "🔄 Iniciando varredura do repositório..."
-                    sh 'git config --global user.email "jenkins@example.com"'
-                    sh 'git config --global user.name "Jenkins Bot"'
-
-                    def changes = sh(script: "git pull origin teste-jenkins-amanda-brito || true", returnStdout: true).trim()
-
-                    if (changes.contains('Already up to date')) {
-                        echo "✅ Nenhuma alteração detectada. Nada a fazer."
-                    } else {
-                        echo "📝 Alterações detectadas! Realizando commit e push..."
-                        sh '''
-                            git add .
-                            git commit -m "Atualização automática do Jenkins ($(date +'%d/%m %H:%M'))" || echo "Sem mudanças para commitar."
-                            git push origin teste-jenkins-amanda-brito
-                        '''
-                    }
-                }
+                checkout([
+                    $class: 'GitSCM', 
+                    branches: [[name: '*/teste-jenkins-amanda-brito']], 
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/Amanda-Brit0/teste-jenkins.git'
+                    ]]
+                ])
+                
+                sh 'git config user.email "amanda-brito-jenkins@example.com"'
+                sh 'git config user.name "Jenkins Bot Amanda Brito"'
+            }
+        }
+        
+        stage('Gerar Alteracao Local') {
+            steps {
+                sh 'echo "Execução forçada em: $(date)" >> pipeline_log.txt'
             }
         }
 
-        stage('Finalização') {
+        stage('Commit e Push Condicional') {
             steps {
-                echo "🚀 Pipeline executada com sucesso!"
+                script {
+                    sh 'git add .'
+                    
+                    def changes_to_commit = sh(script: 'git diff --staged --quiet || echo "changes"', returnStdout: true).trim()
+
+                    if (changes_to_commit.contains('changes')) {
+                        withCredentials([usernamePassword(
+                            credentialsId: 'github-pat-amanda', 
+                            passwordVariable: 'GIT_TOKEN', 
+                            usernameVariable: 'GIT_USERNAME'
+                        )]) {
+                            sh "git commit -m 'Atualização automática do Jenkins ($(date +'%d/%m %H:%M'))'"
+                            sh "git push https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/Amanda-Brit0/teste-jenkins.git teste-jenkins-amanda-brito"
+                        }
+                    }
+                }
             }
         }
     }
